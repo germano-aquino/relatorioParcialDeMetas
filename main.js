@@ -1,6 +1,5 @@
 import headers from "./headers.js";
 import he from "he";
-import setCookieParser from "set-cookie-parser";
 
 const urlParceiras =
   "https://www.trinks.com/Backoffice/Comissao/ExibirProfissionaisRelatorioComissoes";
@@ -60,6 +59,7 @@ const data = {
 await getPartnersList();
 for (const store in data) {
   await getPartnersInfo(store);
+  console.log("Loja %d:", store);
   for (const index in data[store].nome) {
     console.log(data[store].nome[index] + ": ", data[store].resultados[index]);
   }
@@ -70,45 +70,7 @@ async function getPartnersList() {
   for (const store in lojaIds) {
     console.log("Pegando lista de parceiras da loja ", store);
 
-    const requestBody = {
-      TipoData: 2,
-      DataInicio: startDate,
-      DataFim: finalDate,
-      TipoItemPago: 0,
-      ExibirEstornos: false,
-      TipoStatusFiltroPagamento: 1,
-      IdRelacaoProfissional: lojaIds[store].idRelacaoProfissional,
-      mes: Number(month),
-      ano: year,
-      profissional: undefined,
-      indexLinha: 0,
-    };
-
-    const idEstabelecimentoPattern = new RegExp(
-      "(?<=idEstabelecimentoPadrao)(.+?)=(.+?)(?=;)",
-    );
-    const newCookie = headers.Cookie.replace(
-      idEstabelecimentoPattern,
-      `$1=${lojaIds[store].idEstabelecimento}`,
-    );
-
-    const encodedBody = new URLSearchParams(requestBody);
-
-    const parceirasResponse = await fetch(urlParceiras, {
-      method: "POST",
-      headers: {
-        ...headers,
-        "Content-Type": "application/x-www-form-urlencoded",
-        "id-estabelecimento-autenticado": lojaIds[store].idEstabelecimento,
-        Cookie: newCookie,
-      },
-      body: encodedBody,
-    });
-
-    console.log("Fim da requisição!");
-    const parceirasBody = await parceirasResponse.json();
-
-    const table = await parceirasBody.Html;
+    const table = await makeRequisitionForPartnersTable(store);
 
     const namePattern = new RegExp("(?<=<b[^>]+>).+?(?=<)", "g");
     const parceiras = table.matchAll(namePattern);
@@ -116,16 +78,65 @@ async function getPartnersList() {
     const idPattern = new RegExp('(?<= profissional=\").+?(?=\")', "g");
     const ids = table.matchAll(idPattern, "g");
 
-    console.log("\nNome das parceiras:\n");
     for (const parceira of parceiras) {
       data[store].nome.push(he.decode(parceira[0]));
     }
 
-    console.log("\nIds:\n");
     for (const id of ids) {
+      console.log("paceira id: ", id[0]);
       data[store].id.push(id[0]);
     }
   }
+}
+
+function getHeadersForStore(store) {
+  const idEstabelecimentoPattern = new RegExp(
+    "(?<=idEstabelecimentoPadrao)(.+?)=(.+?)(?=;)",
+  );
+  const cookie = headers.Cookie.replace(
+    idEstabelecimentoPattern,
+    `$1=${lojaIds[store].idEstabelecimento}`,
+  );
+
+  return {
+    ...headers,
+    "id-estabelecimento-autenticado": lojaIds[store].idEstabelecimento,
+    Cookie: cookie,
+  };
+}
+
+async function makeRequisitionForPartnersTable(store) {
+  const requestBody = {
+    TipoData: 2,
+    DataInicio: startDate,
+    DataFim: finalDate,
+    TipoItemPago: 0,
+    ExibirEstornos: false,
+    TipoStatusFiltroPagamento: 1,
+    IdRelacaoProfissional: lojaIds[store].idRelacaoProfissional,
+    mes: Number(month),
+    ano: year,
+    profissional: undefined,
+    indexLinha: 0,
+  };
+
+  const headers = getHeadersForStore(store);
+
+  const encodedBody = new URLSearchParams(requestBody);
+
+  const parceirasResponse = await fetch(urlParceiras, {
+    method: "POST",
+    headers: {
+      ...headers,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: encodedBody,
+  });
+
+  const parceirasBody = await parceirasResponse.json();
+
+  const table = await parceirasBody.Html;
+  return table;
 }
 
 async function getPartnersInfo(store) {
@@ -134,7 +145,7 @@ async function getPartnersInfo(store) {
     let resultado = {};
 
     registers.map((r) => {
-      resultado[r.NomeCategoria] = {
+      resultado[r.NomeCategoria.trim()] = {
         valorTotal: r.ValorTotal,
         quantidadeVendida: r.QuantidadeVendida,
       };
@@ -166,23 +177,14 @@ async function makeRequisitionForPartner(store, id) {
     },
   });
 
-  const idEstabelecimentoPattern = new RegExp(
-    "(?<=idEstabelecimentoPadrao)(.+?)=(.+?)(?=;)",
-  );
-  const newCookie = headers.Cookie.replace(
-    idEstabelecimentoPattern,
-    `$1=${lojaIds[store].idEstabelecimento}`,
-  );
+  const headers = getHeadersForStore(store);
 
   const response = await fetch(urlServicos, {
     method: "POST",
-    headers: {
-      ...headers,
-      "id-estabelecimento-autenticado": lojaIds[store].idEstabelecimento,
-      Cookie: newCookie,
-    },
+    headers,
     body,
   });
   const responseBody = await response.json();
+
   return responseBody.Dados.Registros;
 }
