@@ -1,6 +1,8 @@
-import he from "he";
-import ObjectsToCsv from "objects-to-csv";
 import request from "./request.js";
+
+import he from "he";
+import fs from "fs";
+import { json2csv } from "json-2-csv";
 
 const data = {
   14: {
@@ -25,11 +27,12 @@ const data = {
   },
 };
 
-const DEPILACAO = ["Depilação", "Depilação Masculina"];
+const DEPILACAO = ["depilação", "depilação masculina"];
 const FACIAL = [
-  "Depilação Facial com Linha",
-  "Labial e Máscaras Faciais",
-  "Design e coloração",
+  "depilação facial com linha",
+  "labial e máscaras faciais",
+  "design e coloração",
+  "design + coloração",
 ];
 
 const report = {};
@@ -37,49 +40,63 @@ const report = {};
 await getPartnersList();
 for (const store in data) {
   await getPartnersInfo(store);
-  console.log("Loja %s:", store);
-  for (const index in data[store].nome) {
-    console.log(data[store].nome[index] + ": ", data[store].resultados[index]);
+}
+
+// const jsonString = JSON.stringify(report, null, 2);
+// fs.writeFileSync("data.json", jsonString, "utf-8");
+
+// const content = fs.readFileSync("./data.json", "utf-8");
+// const storedReport = JSON.parse(content);
+
+calculateTotalReport(report);
+
+const csv = getCsvFile(report);
+const csvFile = json2csv(csv, { emptyFieldValue: 0 });
+fs.writeFileSync("relatorio.csv", csvFile, "utf-8");
+
+function getCsvFile(report) {
+  let csv = [];
+
+  for (const [partner, row] of Object.entries(report)) {
+    let csvObject = {};
+    csvObject["nome"] = partner;
+    for (const entry of row) {
+      for (const [category, value] of Object.entries(entry.resultados)) {
+        csvObject[`${entry.loja}:${category}`] = value;
+      }
+    }
+    csv.push(csvObject);
+    console.log(csvObject);
   }
-  console.log("\n\n");
+  return csv;
 }
 
-for (const [partner, row] of Object.entries(report)) {
-  let depilacaoTotal = 0;
-  let facialTotal = 0;
-  let manicureTotal = 0;
-  let numLimpezaDePele = 0;
-  row.map((entry) => {
-    depilacaoTotal += entry.resultados.Depilação.valorTotal;
-    facialTotal += entry.resultados.Facial.valorTotal;
-    manicureTotal += entry.resultados.Manicure.valorTotal;
-    numLimpezaDePele += entry.resultados["Limpeza de pele"].quantidadeVendida;
-  });
-  report[partner].push({
-    loja: "Total",
-    resultados: {
-      Depilação: depilacaoTotal,
-      Facial: facialTotal,
-      "Limpeza de pele": numLimpezaDePele,
-      Manicure: manicureTotal,
-    },
-  });
-}
-
-for (const [partner, row] of Object.entries(report)) {
-  console.log(`${partner}: `);
-  for (const entry of row) {
-    console.log(`Loja: ${entry.loja}`);
-    console.log(entry.resultados);
+function calculateTotalReport(report) {
+  for (const [partner, row] of Object.entries(report)) {
+    let depilacaoTotal = 0;
+    let facialTotal = 0;
+    let manicureTotal = 0;
+    let numLimpezaDePele = 0;
+    row.map((entry) => {
+      depilacaoTotal += entry.resultados.depilação;
+      facialTotal += entry.resultados.facial;
+      manicureTotal += entry.resultados.manicure;
+      numLimpezaDePele += entry.resultados["limpeza de pele"];
+    });
+    report[partner].unshift({
+      loja: "total",
+      resultados: {
+        depilação: depilacaoTotal,
+        facial: facialTotal,
+        "limpeza de pele": numLimpezaDePele,
+        manicure: manicureTotal,
+      },
+    });
   }
 }
-
-await new ObjectsToCsv(report).toDisk("relatorio.csv");
 
 async function getPartnersList() {
   for (const store in request.lojaIds) {
-    console.log("Pegando lista de parceiras da loja ", store);
-
     const table = await request.partnersList(store);
 
     const namePattern = new RegExp("(?<=<b[^>]+>).+?(?=<)", "g");
@@ -93,7 +110,6 @@ async function getPartnersList() {
     }
 
     for (const id of ids) {
-      console.log("paceira id: ", id[0]);
       data[store].id.push(id[0]);
     }
   }
@@ -102,14 +118,6 @@ async function getPartnersList() {
 async function getPartnersInfo(store) {
   for (const [index, id] of data[store].id.entries()) {
     const registers = await request.partnerResults(store, id);
-    let resultado = {};
-
-    registers.map((r) => {
-      resultado[r.NomeCategoria.trim()] = {
-        valorTotal: r.ValorTotal,
-        quantidadeVendida: r.QuantidadeVendida,
-      };
-    });
     const partnerName = data[store].nome[index];
 
     if (!(partnerName in report)) {
@@ -119,48 +127,31 @@ async function getPartnersInfo(store) {
       resultados: getReportResult(registers),
       loja: store,
     });
-    data[store].resultados.push(resultado);
   }
 }
 
 function getReportResult(registers) {
   let reportResult = {
-    Depilação: {
-      valorTotal: 0,
-      quantidadeVendida: 0,
-    },
-    Facial: {
-      valorTotal: 0,
-      quantidadeVendida: 0,
-    },
-    "Limpeza de pele": {
-      valorTotal: 0,
-      quantidadeVendida: 0,
-    },
-    Manicure: {
-      valorTotal: 0,
-      quantidadeVendida: 0,
-    },
+    depilação: 0,
+    facial: 0,
+    "limpeza de pele": 0,
+    manicure: 0,
   };
 
   registers.map((r) => {
-    if (DEPILACAO.includes(r.NomeCategoria.trim())) {
-      reportResult["Depilação"].valorTotal += r.ValorTotal;
-      reportResult["Depilação"].quantidadeVendida += r.QuantidadeVendida;
-    } else if (FACIAL.includes(r.NomeCategoria.trim())) {
-      reportResult["Facial"].valorTotal += r.ValorTotal;
-      reportResult["Facial"].quantidadeVendida += r.QuantidadeVendida;
-    } else if (r.NomeCategoria.trim() === "Limpeza de pele") {
-      reportResult["Limpeza de pele"].valorTotal += r.ValorTotal;
-      reportResult["Limpeza de pele"].quantidadeVendida += r.QuantidadeVendida;
-    } else if (r.NomeCategoria.trim() === "Manicure Nacional") {
-      reportResult["Manicure"].valorTotal += r.ValorTotal;
-      reportResult["Manicure"].quantidadeVendida += r.QuantidadeVendida;
+    const categoria = r.NomeCategoria.toLowerCase().trim();
+    if (DEPILACAO.includes(categoria)) {
+      reportResult["depilação"] += r.ValorTotal;
+    } else if (FACIAL.includes(categoria)) {
+      reportResult["facial"] += r.ValorTotal;
+    } else if (categoria === "limpeza de pele") {
+      reportResult["limpeza de pele"] += r.QuantidadeVendida;
+    } else if (categoria === "manicure nacional") {
+      reportResult["manicure"] += r.ValorTotal;
     } else {
-      reportResult[r.NomeCategoria.trim()] = {
-        valorTotal: r.ValorTotal,
-        quantidadeVendida: r.QuantidadeVendida,
-      };
+      if (!(categoria in reportResult))
+        reportResult[categoria] = r.QuantidadeVendida;
+      else reportResult[categoria] += r.QuantidadeVendida;
     }
   });
   return reportResult;
