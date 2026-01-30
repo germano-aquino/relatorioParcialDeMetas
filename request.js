@@ -83,8 +83,6 @@ async function partnersList(store) {
 }
 
 async function partnerResults(store, id) {
-  console.log("Pegando informação do usuário ", id);
-
   const body = JSON.stringify({
     Filtro: {
       DataFim: finalDate,
