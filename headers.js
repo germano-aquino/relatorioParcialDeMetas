@@ -3,7 +3,7 @@ import fs from "fs";
 const cookie = fs.readFileSync("./cookie.txt", "utf-8");
 
 const idEstabelecimentoPattern = new RegExp(
-  "(?<=idEstabelecimentoPadrao)(.+?)=(.+?)(?=;)",
+  "(?<=TrinksAuth.+idEstabelecimentoPadrao)(.+?)=(.+?)(?=;)",
 );
 
 const match = cookie.match(idEstabelecimentoPattern);

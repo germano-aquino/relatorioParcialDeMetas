@@ -6,12 +6,12 @@ const urlServicos =
   "https://www.trinks.com/BackOffice/RankingDeServicos/ObterRankingDeServicos";
 
 const currentDate = new Date();
-const year = currentDate.getFullYear();
-const month = String(currentDate.getMonth() + 1).padStart(2, "0");
+let year = currentDate.getFullYear();
+let month = String(currentDate.getMonth() + 1).padStart(2, "0");
 const finalDay = String(currentDate.getDate() - 1).padStart(2, "0");
 const startDay = "01";
-const startDate = `${startDay}/${month}/${year}`;
-const finalDate = `${finalDay}/${month}/${year}`;
+let startDate = `${startDay}/${month}/${year}`;
+let finalDate = `${finalDay}/${month}/${year}`;
 
 const lojaIds = {
   14: {
@@ -34,7 +34,7 @@ const lojaIds = {
 
 function getHeadersForStore(store) {
   const idEstabelecimentoPattern = new RegExp(
-    "(?<=idEstabelecimentoPadrao)(.+?)=(.+?)(?=;)",
+    "(?<=TrinksAuth.+idEstabelecimentoPadrao)(.+?)=(.+?)(?=;)",
   );
   const cookie = headers.Cookie.replace(
     idEstabelecimentoPattern,
@@ -115,10 +115,36 @@ async function partnerResults(store, id) {
   return responseBody.Dados.Registros;
 }
 
+function setStartDate(newStartDate) {
+  startDate = newStartDate;
+}
+
+function setFinalDate(newFinalDate) {
+  finalDate = newFinalDate;
+}
+
+function getStartDate() {
+  return startDate;
+}
+
+function getFinalDate() {
+  return finalDate;
+}
+
+function setMonthAndYear(newMonth, newYear) {
+  month = newMonth;
+  year = newYear;
+}
+
 const request = {
   partnersList,
   partnerResults,
   lojaIds,
+  setMonthAndYear,
+  setStartDate,
+  setFinalDate,
+  getStartDate,
+  getFinalDate,
 };
 
 export default request;

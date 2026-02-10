@@ -3,6 +3,7 @@ import request from "./request.js";
 import he from "he";
 import fs from "fs";
 import { json2csv } from "json-2-csv";
+import readline from "readline";
 
 const data = {
   14: {
@@ -37,22 +38,125 @@ const FACIAL = [
 
 const report = {};
 
-await getPartnersList();
-for (const store in data) {
-  await getPartnersInfo(store);
-}
-
-// const jsonString = JSON.stringify(report, null, 2);
-// fs.writeFileSync("data.json", jsonString, "utf-8");
-
-// const content = fs.readFileSync("./data.json", "utf-8");
-// const storedReport = JSON.parse(content);
+await main();
 
 calculateTotalReport(report);
 
-const csv = getCsvFile(report);
-const csvFile = json2csv(csv, { emptyFieldValue: 0 });
-fs.writeFileSync("relatorio.csv", csvFile, "utf-8");
+async function main() {
+  try {
+    await getUserInput();
+    await fetchReportData();
+    calculateTotalReport(report);
+    writeCsvFile();
+  } catch (error) {
+    console.error("Não foi possível calcular o relatório.");
+    console.error(error.message);
+    console.error(error);
+  }
+}
+
+async function getUserInput() {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+  const allowedInputs = ["", "m", "d"];
+
+  console.log("Instruções:");
+  console.log(
+    "Aperte 'enter' para gerar o relatório do dia 1 até ontem deste mês",
+  );
+  console.log("Aperte 'm e enter' para gerar o relatório do mês passado");
+  console.log(
+    "Aperte 'd e enter' para selecionar uma data de ínicio e de fim\n",
+  );
+  const option = await question("Insira instrução:\n", rl);
+
+  if (!allowedInputs.includes(option)) {
+    rl.close();
+    throw new Error("Instrução %s é inválida", option);
+  }
+
+  if (option === "") {
+    rl.close();
+  }
+
+  if (option === "m") {
+    rl.close();
+    const today = new Date();
+    const finalDateObj = new Date(today.getFullYear(), today.getMonth(), 0);
+    const year = finalDateObj.getFullYear();
+    const month = String(finalDateObj.getMonth() + 1).padStart(2, "0");
+    const finalDay = String(finalDateObj.getDate()).padStart(2, "0");
+    const startDay = "01";
+    const newFinalDate = `${finalDay}/${month}/${year}`;
+    const newStartDate = `${startDay}/${month}/${year}`;
+    request.setMonthAndYear(month, year);
+    request.setStartDate(newStartDate);
+    request.setFinalDate(newFinalDate);
+  }
+
+  if (option === "d") {
+    console.log("Digite a data inicial com o seguinte formato 13/02/2026");
+    const startDateInput = await question("Insira a data de ínicio:", rl);
+    const finalDateInput = await question("Insira a data de término:", rl);
+    rl.close();
+    validateDates(startDateInput, finalDateInput);
+    const split = startDateInput.split("/");
+    request.setMonthAndYear(split[1], split[2]);
+    request.setStartDate(startDateInput);
+    request.setFinalDate(finalDateInput);
+  }
+
+  console.log(
+    "\n\nCalculando relatório a partir de %s até %s",
+    request.getStartDate(),
+    request.getFinalDate(),
+  );
+}
+
+function question(statement, rl) {
+  return new Promise((resolve) => {
+    rl.question(statement, (answer) => {
+      resolve(answer);
+    });
+  });
+}
+
+function validateDates(start, final) {
+  const datePattern =
+    /^(0?[1-9]|[12][0-9]|3[01])[\/\-](0?[1-9]|1[012])[\/\-]\d{4}$/;
+  if (!datePattern.test(start)) {
+    throw new Error(`Data inicial ${start} não segue o padrão 01/03/2025.`);
+  }
+
+  if (!datePattern.test(final)) {
+    throw new Error(`Data final ${final} não segue o padrão 01/03/2025.`);
+  }
+
+  const startDate = new Date(start);
+  const finalDate = new Date(final);
+
+  if (finalDate <= startDate) {
+    throw new Error("A data final deve ser após a inicial.");
+  }
+}
+
+async function fetchReportData() {
+  await getPartnersList();
+  for (const store in data) {
+    await getPartnersInfo(store);
+  }
+}
+
+function writeCsvFile() {
+  const csv = getCsvFile(report);
+  const csvFile = json2csv(csv, {
+    emptyFieldValue: 0,
+    delimiter: { field: "\t" },
+  });
+  fs.writeFileSync("relatorio.csv", csvFile, "utf-8");
+}
 
 function getCsvFile(report) {
   let csv = [];
@@ -66,7 +170,6 @@ function getCsvFile(report) {
       }
     }
     csv.push(csvObject);
-    console.log(csvObject);
   }
   return csv;
 }
@@ -97,6 +200,7 @@ function calculateTotalReport(report) {
 
 async function getPartnersList() {
   for (const store in request.lojaIds) {
+    console.log("Buscando lista de parceiras da loja %s\n", store);
     const table = await request.partnersList(store);
 
     const namePattern = new RegExp("(?<=<b[^>]+>).+?(?=<)", "g");
@@ -116,9 +220,11 @@ async function getPartnersList() {
 }
 
 async function getPartnersInfo(store) {
+  console.log("Buscando informações específicas da %s\n", store);
   for (const [index, id] of data[store].id.entries()) {
-    const registers = await request.partnerResults(store, id);
     const partnerName = data[store].nome[index];
+    console.log("Buscando serviços da %s", partnerName);
+    const registers = await request.partnerResults(store, id);
 
     if (!(partnerName in report)) {
       report[partnerName] = [];
@@ -156,3 +262,9 @@ function getReportResult(registers) {
   });
   return reportResult;
 }
+
+// const jsonString = JSON.stringify(report, null, 2);
+// fs.writeFileSync("data.json", jsonString, "utf-8");
+
+// const content = fs.readFileSync("./data.json", "utf-8");
+// const storedReport = JSON.parse(content);
