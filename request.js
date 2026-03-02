@@ -1,4 +1,5 @@
 import headers from "./headers.js";
+import fs from "fs";
 
 const urlParceiras =
   "https://www.trinks.com/Backoffice/Comissao/ExibirProfissionaisRelatorioComissoes";
@@ -32,11 +33,13 @@ const lojaIds = {
   },
 };
 
+let cookie = headers.Cookie;
+
 function getHeadersForStore(store) {
   const idEstabelecimentoPattern = new RegExp(
     "(?<=TrinksAuth.+idEstabelecimentoPadrao)(.+?)=(.+?)(?=;)",
   );
-  const cookie = headers.Cookie.replace(
+  cookie = cookie.replace(
     idEstabelecimentoPattern,
     `$1=${lojaIds[store].idEstabelecimento}`,
   );
@@ -110,6 +113,17 @@ async function partnerResults(store, id) {
     headers,
     body,
   });
+
+  const setCookie = response.headers.getSetCookie();
+  if (setCookie) {
+    setCookie.map((ck) => {
+      const keyValue = ck.split(";")[0];
+      const [key, value] = keyValue.split("=");
+      const pattern = new RegExp(`(?<=${key})=(.+?)(?=;)`);
+      cookie = cookie.replace(pattern, `=${value}`);
+    });
+  }
+
   const responseBody = await response.json();
 
   return responseBody.Dados.Registros;

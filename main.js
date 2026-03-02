@@ -219,6 +219,10 @@ async function getPartnersList() {
   }
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function getPartnersInfo(store) {
   console.log("Buscando informações específicas da %s\n", store);
   for (const [index, id] of data[store].id.entries()) {
