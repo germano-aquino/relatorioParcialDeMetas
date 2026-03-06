@@ -40,8 +40,6 @@ const report = {};
 
 await main();
 
-calculateTotalReport(report);
-
 async function main() {
   try {
     await getUserInput();
@@ -217,10 +215,6 @@ async function getPartnersList() {
       data[store].id.push(id[0]);
     }
   }
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function getPartnersInfo(store) {
