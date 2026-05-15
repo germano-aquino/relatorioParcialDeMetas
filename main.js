@@ -4,6 +4,14 @@ import he from "he";
 import fs from "fs";
 import { json2csv } from "json-2-csv";
 import readline from "readline";
+import { parse } from "csv-parse";
+
+const allowedReason = [
+  "cashback",
+  "formosa",
+  "aniversariante",
+  "campanha do mes",
+];
 
 const data = {
   14: {
@@ -38,7 +46,56 @@ const FACIAL = [
 
 const report = {};
 
-await main();
+await pseudoMain();
+
+async function pseudoMain() {
+  await request.clientsAmount("14");
+}
+
+async function readCsv() {
+  const fileName = "20260514164334_5ac2ddba_relatorio.csv";
+  const forbiddenReason = [];
+  let appointmentAmount = 0;
+  let readingIsAvailable = true;
+
+  const readStream = fs.createReadStream(fileName);
+
+  readStream
+    .pipe(
+      parse({
+        delimiter: ";",
+        columns: true,
+        from_line: 7,
+        encoding: "latin1",
+        relax_column_count: true,
+      }),
+    )
+    .on("data", (data) => {
+      const reason = data["Motivo Desconto"];
+
+      if (data["Data de Atendimento/Venda"] === "") {
+        console.log("Fecha a leitura");
+        readingIsAvailable = false;
+      }
+
+      if (readingIsAvailable) {
+        console.log(data);
+        if (
+          reason === "" ||
+          allowedReason.some((item) => item.includes(reason))
+        )
+          appointmentAmount++;
+        else if (!forbiddenReason.includes(reason))
+          forbiddenReason.push(reason);
+      }
+    });
+
+  readStream.on("close", () => {
+    console.log("Quantidade de atendimentos: " + appointmentAmount);
+    console.log("Motivos inválidos:");
+    forbiddenReason.map((item) => console.log(item));
+  });
+}
 
 async function main() {
   try {
@@ -75,20 +132,26 @@ async function getUserInput() {
     throw new Error("Instrução %s é inválida", option);
   }
 
+  const today = new Date();
+  const finalDateObj = new Date(today.getFullYear(), today.getMonth(), 0);
+  const year = finalDateObj.getFullYear();
+  const month = String(finalDateObj.getMonth() + 1).padStart(2, "0");
+  const finalDay = String(finalDateObj.getDate()).padStart(2, "0");
+  const startDay = "01";
+  const newFinalDate = `${finalDay}/${month}/${year}`;
+  const newStartDate = `${startDay}/${month}/${year}`;
+
   if (option === "") {
     rl.close();
+    if (finalDay === startDay) {
+      throw new Error(
+        "Não é possível calcularo relatório do dia 01 até ontem pois hoje é dia 01.",
+      );
+    }
   }
 
   if (option === "m") {
     rl.close();
-    const today = new Date();
-    const finalDateObj = new Date(today.getFullYear(), today.getMonth(), 0);
-    const year = finalDateObj.getFullYear();
-    const month = String(finalDateObj.getMonth() + 1).padStart(2, "0");
-    const finalDay = String(finalDateObj.getDate()).padStart(2, "0");
-    const startDay = "01";
-    const newFinalDate = `${finalDay}/${month}/${year}`;
-    const newStartDate = `${startDay}/${month}/${year}`;
     request.setMonthAndYear(month, year);
     request.setStartDate(newStartDate);
     request.setFinalDate(newFinalDate);
