@@ -8,12 +8,36 @@ import { parse } from "csv-parse";
 
 const allowedReason = [
   "cashback",
-  "formosa",
-  "aniversariante",
+  "funcionários formosa",
+  "aniversariante do mês",
   "campanha do mes",
+  "campanha do mês",
 ];
 
-const data = {
+const partnerData = {
+  14: {
+    nome: [],
+    id: [],
+    resultados: [],
+  },
+  batista: {
+    nome: [],
+    id: [],
+    resultados: [],
+  },
+  duque: {
+    nome: [],
+    id: [],
+    resultados: [],
+  },
+  umarizal: {
+    nome: [],
+    id: [],
+    resultados: [],
+  },
+};
+
+const receptionistData = {
   14: {
     nome: [],
     id: [],
@@ -49,16 +73,22 @@ const report = {};
 await pseudoMain();
 
 async function pseudoMain() {
-  await request.clientsAmount("14");
+  await getReceptionistsList();
+
+  // await request.clientsAmount("14");
+  // await readCsv();
 }
 
 async function readCsv() {
-  const fileName = "20260514164334_5ac2ddba_relatorio.csv";
+  const quatorzeFileName = "20260518163832_0ce4fd65_relatorio.csv";
+  const duqueFileName = "20260518165315_e3725b8c_relatorio.csv";
+  const umarizalFileName = "20260518165640_42acc7cf_relatorio.csv";
+  const batistaFileName = "20260518165916_4aac228e_relatorio.csv";
   const forbiddenReason = [];
   let appointmentAmount = 0;
   let readingIsAvailable = true;
 
-  const readStream = fs.createReadStream(fileName);
+  const readStream = fs.createReadStream(batistaFileName);
 
   readStream
     .pipe(
@@ -71,7 +101,7 @@ async function readCsv() {
       }),
     )
     .on("data", (data) => {
-      const reason = data["Motivo Desconto"];
+      const reason = data["Motivo Desconto"]?.toLowerCase();
 
       if (data["Data de Atendimento/Venda"] === "") {
         console.log("Fecha a leitura");
@@ -205,8 +235,9 @@ function validateDates(start, final) {
 
 async function fetchReportData() {
   await getPartnersList();
-  for (const store in data) {
+  for (const store in partnerData) {
     await getPartnersInfo(store);
+    await getReceptionistInfo(store);
   }
 }
 
@@ -271,19 +302,40 @@ async function getPartnersList() {
     const ids = table.matchAll(idPattern, "g");
 
     for (const parceira of parceiras) {
-      data[store].nome.push(he.decode(parceira[0]));
+      partnerData[store].nome.push(he.decode(parceira[0]));
     }
 
     for (const id of ids) {
-      data[store].id.push(id[0]);
+      partnerData[store].id.push(id[0]);
     }
+  }
+}
+
+async function getReceptionistsList() {
+  for (const store in request.lojaIds) {
+    const table = await request.partnersList(store, true);
+
+    const namePattern = new RegExp("(?<=<b[^>]+>).+?(?=<)", "g");
+    const parceiras = table.matchAll(namePattern);
+
+    const idPattern = new RegExp('(?<= profissional=\").+?(?=\")', "g");
+    const ids = table.matchAll(idPattern, "g");
+
+    for (const parceira of parceiras) {
+      receptionistData[store].nome.push(he.decode(parceira[0]));
+    }
+
+    for (const id of ids) {
+      receptionistData[store].id.push(id[0]);
+    }
+    console.log(receptionistData[store]);
   }
 }
 
 async function getPartnersInfo(store) {
   console.log("Buscando informações específicas da %s\n", store);
-  for (const [index, id] of data[store].id.entries()) {
-    const partnerName = data[store].nome[index];
+  for (const [index, id] of partnerData[store].id.entries()) {
+    const partnerName = partnerData[store].nome[index];
     console.log("Buscando serviços da %s", partnerName);
     const registers = await request.partnerResults(store, id);
 
@@ -297,12 +349,51 @@ async function getPartnersInfo(store) {
   }
 }
 
+async function getReceptionistInfo(store) {
+  for (const [index, id] of receptionistData[store]) {
+    const receptionistName = receptionistData[store][index];
+    console.log("Buscando pacotes e produtos da %s", receptionistName);
+
+    const html = await request.receptionistResults(store, id);
+
+    const receptionistPattern = new RegExp(
+      '(?<=<td class="valorGrande" style="text-align: center;">).+?(?=<)',
+      "g",
+    );
+    const receptionistInfo = Array.from(html.matchAll(receptionistPattern));
+    const products = receptionistInfo.shift();
+    const combos = receptionistInfo.shift();
+
+    const registers = [
+      {
+        NomeCategoria: "produtos",
+        QuantidadeVendida: products[0],
+      },
+      {
+        NomeCategoria: "combos",
+        QuantidadeVendida: combos[0],
+      },
+    ];
+
+    if (!(receptionistName in report)) {
+      report[receptionistName] = [];
+    }
+
+    report[receptionistName].push({
+      resultados: getReportResult(registers),
+      loja: store,
+    });
+  }
+}
+
 function getReportResult(registers) {
   let reportResult = {
     depilação: 0,
     facial: 0,
     "limpeza de pele": 0,
     manicure: 0,
+    produtos: 0,
+    combos: 0,
   };
 
   registers.map((r) => {
@@ -315,6 +406,10 @@ function getReportResult(registers) {
       reportResult["limpeza de pele"] += r.QuantidadeVendida;
     } else if (categoria === "manicure nacional") {
       reportResult["manicure"] += r.ValorTotal;
+    } else if (categoria === "produtos") {
+      reportResult["produtos"] += r.QuantidadeVendida;
+    } else if (categoria === "combos") {
+      reportResult["combos"] += r.QuantidadeVendida;
     } else {
       if (!(categoria in reportResult))
         reportResult[categoria] = r.QuantidadeVendida;

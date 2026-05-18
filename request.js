@@ -1,10 +1,17 @@
 import headers from "./headers.js";
+
+import https from "https";
+import { parse } from "csv-parse";
 import fs from "fs";
 
 const urlParceiras =
   "https://www.trinks.com/Backoffice/Comissao/ExibirProfissionaisRelatorioComissoes";
 const urlServicos =
   "https://www.trinks.com/BackOffice/RankingDeServicos/ObterRankingDeServicos";
+const urlAtendimentos =
+  "https://www.trinks.com/BackOffice/Download/ExportarFinanceiro";
+const urlRecepcionista =
+  "https://www.trinks.com/BackOffice/Comissao/ImprimirRelatorioProfissional";
 
 const currentDate = new Date();
 let year = currentDate.getFullYear();
@@ -14,22 +21,34 @@ const startDay = "01";
 let startDate = `${startDay}/${month}/${year}`;
 let finalDate = `${finalDay}/${month}/${year}`;
 
+const allowedReason = [
+  "cashback",
+  "funcionários formosa",
+  "aniversariante do mês",
+  "campanha do mes",
+  "campanha do mês",
+];
+
 const lojaIds = {
   14: {
     idRelacaoProfissional: "46810",
     idEstabelecimento: "18769",
+    idRelacaoProfissionalRecepcionista: "46809",
   },
   batista: {
     idRelacaoProfissional: "103890",
     idEstabelecimento: "35295",
+    idRelacaoProfissionalRecepcionista: "103889",
   },
   duque: {
     idRelacaoProfissional: "440885",
     idEstabelecimento: "120037",
+    idRelacaoProfissionalRecepcionista: "440884",
   },
   umarizal: {
     idRelacaoProfissional: "49102",
     idEstabelecimento: "19357",
+    idRelacaoProfissionalRecepcionista: "49101",
   },
 };
 
@@ -37,7 +56,7 @@ let cookie = headers.Cookie;
 
 function getHeadersForStore(store) {
   const idEstabelecimentoPattern = new RegExp(
-    "(?<=TrinksAuth.+idEstabelecimentoPadrao)(.+?)=(.+?)(?=;)",
+    "(?<=idEstabelecimentoPadrao)(.+?)=(.+?)(?=;)",
   );
   cookie = cookie.replace(
     idEstabelecimentoPattern,
@@ -51,7 +70,11 @@ function getHeadersForStore(store) {
   };
 }
 
-async function partnersList(store) {
+async function partnersList(store, isReceptionist = false) {
+  const idRelacaoProfissional = isReceptionist
+    ? lojaIds[store].idRelacaoProfissionalRecepcionista
+    : lojaIds[store].idRelacaoProfissional;
+
   const requestBody = {
     TipoData: 2,
     DataInicio: startDate,
@@ -59,7 +82,7 @@ async function partnersList(store) {
     TipoItemPago: 0,
     ExibirEstornos: false,
     TipoStatusFiltroPagamento: 1,
-    IdRelacaoProfissional: lojaIds[store].idRelacaoProfissional,
+    IdRelacaoProfissional: idRelacaoProfissional,
     mes: Number(month),
     ano: year,
     profissional: undefined,
@@ -115,6 +138,126 @@ async function partnerResults(store, id) {
   });
 
   const setCookie = response.headers.getSetCookie();
+  cookieShouldBeSet(setCookie);
+
+  const responseBody = await response.json();
+
+  return responseBody.Dados.Registros;
+}
+
+async function receptionistResults(store, id) {
+  const body = {
+    TipoData: 2,
+    DataInicio: startDate,
+    DataFim: finalDate,
+    TipoItemPago: 0,
+    ExibirEstornos: false,
+    TipoStatusFiltroPagamento: 1,
+    IdRelacaoProfissional: lojaIds[store].idRelacaoProfissionalRecepcionista,
+    CodigoProfissional: id,
+    mes: month,
+    ano: year,
+    TipoDeImpressao: 0,
+  };
+
+  const headers = getHeadersForStore(store);
+
+  const encodedBody = new URLSearchParams(body);
+
+  const receptioninstResponse = await fetch(urlRecepcionista, {
+    method: "POST",
+    headers: {
+      ...headers,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: encodedBody,
+  });
+
+  const setCookie = receptioninstResponse.headers.getSetCookie();
+  cookieShouldBeSet(setCookie);
+
+  const responseBody = await receptioninstResponse.text();
+  console.log(responseBody);
+  return responseBody;
+}
+
+async function clientsAmount(store) {
+  const body = {
+    TipoData: 2,
+    DataInicio: startDate,
+    DataFim: finalDate,
+    ExibirEstornos: false,
+    TipoFiltroTransacaoProduto: 0,
+    IdFiltroPorDesconto: 0,
+  };
+
+  const headers = getHeadersForStore(store);
+
+  const encodedBody = new URLSearchParams(body);
+
+  const clientsAmountResponse = await fetch(urlAtendimentos, {
+    method: "POST",
+    headers: {
+      ...headers,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: encodedBody,
+  });
+
+  const setCookie = clientsAmountResponse.headers.getSetCookie();
+  cookieShouldBeSet(setCookie);
+
+  const responseBody = await clientsAmountResponse.json();
+
+  const fileUrl = responseBody.Dados.UrlDownload;
+
+  const forbiddenReason = [];
+  let appointmentAmount = 0;
+  let readingIsAvailable = true;
+
+  https
+    .get(fileUrl, (response) => {
+      response
+        .pipe(
+          parse({
+            delimiter: ";",
+            columns: true,
+            from_line: 7,
+            encoding: "latin1",
+            relax_column_count: true,
+          }),
+        )
+        .on("data", (data) => {
+          if (readingIsAvailable) {
+            const reason = data["Motivo Desconto"]?.toLowerCase();
+
+            if (data["Data de Atendimento/Venda"] === "") {
+              readingIsAvailable = false;
+            } else {
+              if (
+                reason === "" ||
+                allowedReason.some((item) => item.includes(reason))
+              )
+                appointmentAmount++;
+              else if (!forbiddenReason.includes(reason))
+                forbiddenReason.push(reason);
+            }
+          }
+        })
+        .on("finish", () => {
+          console.log(
+            `Quantidade de atendimentos da ${store}: ${appointmentAmount}`,
+          );
+          console.log("Motivos inválidos:");
+          forbiddenReason.map((item) => console.log(item));
+        });
+    })
+    .on("error", (err) => {
+      console.error(`Error: ${err.message}`);
+    });
+}
+
+function cookieShouldBeSet(setCookie) {
   if (setCookie) {
     setCookie.map((ck) => {
       const keyValue = ck.split(";")[0];
@@ -123,10 +266,6 @@ async function partnerResults(store, id) {
       cookie = cookie.replace(pattern, `=${value}`);
     });
   }
-
-  const responseBody = await response.json();
-
-  return responseBody.Dados.Registros;
 }
 
 function setStartDate(newStartDate) {
@@ -153,7 +292,9 @@ function setMonthAndYear(newMonth, newYear) {
 const request = {
   partnersList,
   partnerResults,
+  receptionistResults,
   lojaIds,
+  clientsAmount,
   setMonthAndYear,
   setStartDate,
   setFinalDate,
