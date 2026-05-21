@@ -21,13 +21,8 @@ const startDay = "01";
 let startDate = `${startDay}/${month}/${year}`;
 let finalDate = `${finalDay}/${month}/${year}`;
 
-const allowedReason = [
-  "cashback",
-  "funcionários formosa",
-  "aniversariante do mês",
-  "campanha do mes",
-  "campanha do mês",
-];
+const content = fs.readFileSync("./motivosValidosDeAtendimentos.txt", "utf-8");
+const allowedReason = content.split("\n");
 
 const lojaIds = {
   14: {
