@@ -188,7 +188,7 @@ async function fetchReportData() {
     await getClientsAmount(store);
   }
   console.log(
-    "\nMotivos inválidos para contabilizar a quantidade de agendamentos:",
+    "Motivos inválidos para contabilizar a quantidade de agendamentos:",
   );
   forbiddenReasons.map((reason) => console.log(reason));
 }
@@ -226,6 +226,7 @@ function calculateTotalReport(report) {
     let numLimpezaDePele = 0;
     let numProdutos = 0;
     let numCombos = 0;
+    let numClientes = 0;
 
     row.map((entry) => {
       depilacaoTotal += entry.resultados.depilação;
@@ -234,6 +235,7 @@ function calculateTotalReport(report) {
       numLimpezaDePele += entry.resultados["limpeza de pele"];
       numProdutos += entry.resultados.produtos;
       numCombos += entry.resultados.combos;
+      numClientes += entry.resultados.clientes;
     });
     report[partner].unshift({
       loja: "total",
@@ -244,6 +246,7 @@ function calculateTotalReport(report) {
         manicure: manicureTotal,
         produtos: numProdutos,
         combos: numCombos,
+        clientes: numClientes,
       },
     });
   }
@@ -342,17 +345,17 @@ async function getCombosAndProductsFromReceptionist(store, id) {
     "g",
   );
   const receptionistInfo = Array.from(html.matchAll(receptionistPattern));
-  const products = productExist ? receptionistInfo.shift() : 0;
-  const combos = comboExist ? receptionistInfo.shift() : 0;
+  const products = productExist ? receptionistInfo.shift() : [0];
+  const combos = comboExist ? receptionistInfo.shift() : [0];
 
   const registers = [
     {
       NomeCategoria: "produtos",
-      QuantidadeVendida: products[0],
+      QuantidadeVendida: productExist ? stringToNumber(products[0]) : 0,
     },
     {
       NomeCategoria: "combos",
-      QuantidadeVendida: combos[0],
+      QuantidadeVendida: comboExist ? stringToNumber(combos[0]) : 0,
     },
   ];
 
@@ -360,7 +363,7 @@ async function getCombosAndProductsFromReceptionist(store, id) {
 }
 
 async function getClientsAmount(store) {
-  console.log(`Buscando quantidade de clientes da loja ${store}`);
+  console.log(`Buscando quantidade de clientes da loja ${store}\n`);
   const [clientsAmount, storeForbiddenReasons] =
     await request.clientsAmount(store);
 
@@ -417,6 +420,12 @@ function getReportResult(registers) {
     }
   });
   return reportResult;
+}
+
+function stringToNumber(str) {
+  return parseFloat(
+    str.replace(/\s/g, "").replace(/\./g, "").replace(",", "."),
+  );
 }
 
 // const jsonString = JSON.stringify(report, null, 2);
