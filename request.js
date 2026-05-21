@@ -1,7 +1,7 @@
 import headers from "./headers.js";
 
 import https from "https";
-import { parse } from "csv-parse";
+import { parse } from "csv-parse/sync";
 import fs from "fs";
 
 const urlParceiras =
@@ -70,7 +70,7 @@ function getHeadersForStore(store) {
   };
 }
 
-async function partnersList(store, isReceptionist = false) {
+async function employeesList(store, isReceptionist = false) {
   const idRelacaoProfissional = isReceptionist
     ? lojaIds[store].idRelacaoProfissionalRecepcionista
     : lojaIds[store].idRelacaoProfissional;
@@ -101,6 +101,8 @@ async function partnersList(store, isReceptionist = false) {
     },
     body: encodedBody,
   });
+
+  cookieShouldBeSet(parceirasResponse);
 
   const parceirasBody = await parceirasResponse.json();
 
@@ -137,8 +139,7 @@ async function partnerResults(store, id) {
     body,
   });
 
-  const setCookie = response.headers.getSetCookie();
-  cookieShouldBeSet(setCookie);
+  cookieShouldBeSet(response);
 
   const responseBody = await response.json();
 
@@ -173,11 +174,9 @@ async function receptionistResults(store, id) {
     body: encodedBody,
   });
 
-  const setCookie = receptioninstResponse.headers.getSetCookie();
-  cookieShouldBeSet(setCookie);
+  cookieShouldBeSet(receptioninstResponse);
 
   const responseBody = await receptioninstResponse.text();
-  console.log(responseBody);
   return responseBody;
 }
 
@@ -204,60 +203,47 @@ async function clientsAmount(store) {
     body: encodedBody,
   });
 
-  const setCookie = clientsAmountResponse.headers.getSetCookie();
-  cookieShouldBeSet(setCookie);
+  cookieShouldBeSet(clientsAmountResponse);
 
   const responseBody = await clientsAmountResponse.json();
 
   const fileUrl = responseBody.Dados.UrlDownload;
 
-  const forbiddenReason = [];
+  const forbiddenReasons = [];
   let appointmentAmount = 0;
-  let readingIsAvailable = true;
 
-  https
-    .get(fileUrl, (response) => {
-      response
-        .pipe(
-          parse({
-            delimiter: ";",
-            columns: true,
-            from_line: 7,
-            encoding: "latin1",
-            relax_column_count: true,
-          }),
-        )
-        .on("data", (data) => {
-          if (readingIsAvailable) {
-            const reason = data["Motivo Desconto"]?.toLowerCase();
+  const response = await fetch(fileUrl);
+  const rawData = await response.arrayBuffer();
 
-            if (data["Data de Atendimento/Venda"] === "") {
-              readingIsAvailable = false;
-            } else {
-              if (
-                reason === "" ||
-                allowedReason.some((item) => item.includes(reason))
-              )
-                appointmentAmount++;
-              else if (!forbiddenReason.includes(reason))
-                forbiddenReason.push(reason);
-            }
-          }
-        })
-        .on("finish", () => {
-          console.log(
-            `Quantidade de atendimentos da ${store}: ${appointmentAmount}`,
-          );
-          console.log("Motivos inválidos:");
-          forbiddenReason.map((item) => console.log(item));
-        });
-    })
-    .on("error", (err) => {
-      console.error(`Error: ${err.message}`);
-    });
+  const decoder = new TextDecoder("windows-1252");
+  const csvFile = decoder.decode(rawData);
+
+  const csvParsed = parse(csvFile, {
+    delimiter: ";",
+    columns: true,
+    from_line: 7,
+    relax_column_count: true,
+  });
+
+  for (const row of csvParsed) {
+    const reason = row["Motivo Desconto"]?.toLowerCase();
+
+    if (row["Data de Atendimento/Venda"] === "") {
+      break;
+    }
+
+    if (reason === "" || allowedReason.some((item) => item.includes(reason))) {
+      appointmentAmount++;
+    } else if (!forbiddenReasons.includes(reason)) {
+      forbiddenReasons.push(reason);
+    }
+  }
+
+  return [appointmentAmount, forbiddenReasons];
 }
 
-function cookieShouldBeSet(setCookie) {
+function cookieShouldBeSet(response) {
+  const setCookie = response.headers.getSetCookie();
   if (setCookie) {
     setCookie.map((ck) => {
       const keyValue = ck.split(";")[0];
@@ -290,7 +276,7 @@ function setMonthAndYear(newMonth, newYear) {
 }
 
 const request = {
-  partnersList,
+  employeesList,
   partnerResults,
   receptionistResults,
   lojaIds,

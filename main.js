@@ -70,62 +70,9 @@ const FACIAL = [
 
 const report = {};
 
-await pseudoMain();
+const forbiddenReasons = [];
 
-async function pseudoMain() {
-  await getReceptionistsList();
-
-  // await request.clientsAmount("14");
-  // await readCsv();
-}
-
-async function readCsv() {
-  const quatorzeFileName = "20260518163832_0ce4fd65_relatorio.csv";
-  const duqueFileName = "20260518165315_e3725b8c_relatorio.csv";
-  const umarizalFileName = "20260518165640_42acc7cf_relatorio.csv";
-  const batistaFileName = "20260518165916_4aac228e_relatorio.csv";
-  const forbiddenReason = [];
-  let appointmentAmount = 0;
-  let readingIsAvailable = true;
-
-  const readStream = fs.createReadStream(batistaFileName);
-
-  readStream
-    .pipe(
-      parse({
-        delimiter: ";",
-        columns: true,
-        from_line: 7,
-        encoding: "latin1",
-        relax_column_count: true,
-      }),
-    )
-    .on("data", (data) => {
-      const reason = data["Motivo Desconto"]?.toLowerCase();
-
-      if (data["Data de Atendimento/Venda"] === "") {
-        console.log("Fecha a leitura");
-        readingIsAvailable = false;
-      }
-
-      if (readingIsAvailable) {
-        console.log(data);
-        if (
-          reason === "" ||
-          allowedReason.some((item) => item.includes(reason))
-        )
-          appointmentAmount++;
-        else if (!forbiddenReason.includes(reason))
-          forbiddenReason.push(reason);
-      }
-    });
-
-  readStream.on("close", () => {
-    console.log("Quantidade de atendimentos: " + appointmentAmount);
-    console.log("Motivos inválidos:");
-    forbiddenReason.map((item) => console.log(item));
-  });
-}
+await main();
 
 async function main() {
   try {
@@ -238,7 +185,12 @@ async function fetchReportData() {
   for (const store in partnerData) {
     await getPartnersInfo(store);
     await getReceptionistInfo(store);
+    await getClientsAmount(store);
   }
+  console.log(
+    "\nMotivos inválidos para contabilizar a quantidade de agendamentos:",
+  );
+  forbiddenReasons.map((reason) => console.log(reason));
 }
 
 function writeCsvFile() {
@@ -272,11 +224,16 @@ function calculateTotalReport(report) {
     let facialTotal = 0;
     let manicureTotal = 0;
     let numLimpezaDePele = 0;
+    let numProdutos = 0;
+    let numCombos = 0;
+
     row.map((entry) => {
       depilacaoTotal += entry.resultados.depilação;
       facialTotal += entry.resultados.facial;
       manicureTotal += entry.resultados.manicure;
       numLimpezaDePele += entry.resultados["limpeza de pele"];
+      numProdutos += entry.resultados.produtos;
+      numCombos += entry.resultados.combos;
     });
     report[partner].unshift({
       loja: "total",
@@ -285,6 +242,8 @@ function calculateTotalReport(report) {
         facial: facialTotal,
         "limpeza de pele": numLimpezaDePele,
         manicure: manicureTotal,
+        produtos: numProdutos,
+        combos: numCombos,
       },
     });
   }
@@ -293,42 +252,35 @@ function calculateTotalReport(report) {
 async function getPartnersList() {
   for (const store in request.lojaIds) {
     console.log("Buscando lista de parceiras da loja %s\n", store);
-    const table = await request.partnersList(store);
+    const partnerTable = await request.employeesList(store);
 
     const namePattern = new RegExp("(?<=<b[^>]+>).+?(?=<)", "g");
-    const parceiras = table.matchAll(namePattern);
+    const partners = partnerTable.matchAll(namePattern);
 
     const idPattern = new RegExp('(?<= profissional=\").+?(?=\")', "g");
-    const ids = table.matchAll(idPattern, "g");
+    const partnerIds = partnerTable.matchAll(idPattern, "g");
 
-    for (const parceira of parceiras) {
+    for (const parceira of partners) {
       partnerData[store].nome.push(he.decode(parceira[0]));
     }
 
-    for (const id of ids) {
+    for (const id of partnerIds) {
       partnerData[store].id.push(id[0]);
     }
-  }
-}
 
-async function getReceptionistsList() {
-  for (const store in request.lojaIds) {
-    const table = await request.partnersList(store, true);
+    const receptionistTable = await request.employeesList(store, true);
 
-    const namePattern = new RegExp("(?<=<b[^>]+>).+?(?=<)", "g");
-    const parceiras = table.matchAll(namePattern);
+    const receptionistNames = receptionistTable.matchAll(namePattern);
 
-    const idPattern = new RegExp('(?<= profissional=\").+?(?=\")', "g");
-    const ids = table.matchAll(idPattern, "g");
+    const receptionistIds = receptionistTable.matchAll(idPattern, "g");
 
-    for (const parceira of parceiras) {
-      receptionistData[store].nome.push(he.decode(parceira[0]));
+    for (const name of receptionistNames) {
+      receptionistData[store].nome.push(he.decode(name[0]));
     }
 
-    for (const id of ids) {
+    for (const id of receptionistIds) {
       receptionistData[store].id.push(id[0]);
     }
-    console.log(receptionistData[store]);
   }
 }
 
@@ -337,6 +289,7 @@ async function getPartnersInfo(store) {
   for (const [index, id] of partnerData[store].id.entries()) {
     const partnerName = partnerData[store].nome[index];
     console.log("Buscando serviços da %s", partnerName);
+
     const registers = await request.partnerResults(store, id);
 
     if (!(partnerName in report)) {
@@ -347,33 +300,15 @@ async function getPartnersInfo(store) {
       loja: store,
     });
   }
+  console.log("");
 }
 
 async function getReceptionistInfo(store) {
-  for (const [index, id] of receptionistData[store]) {
-    const receptionistName = receptionistData[store][index];
+  for (const [index, id] of receptionistData[store].id.entries()) {
+    const receptionistName = receptionistData[store].nome[index];
     console.log("Buscando pacotes e produtos da %s", receptionistName);
 
-    const html = await request.receptionistResults(store, id);
-
-    const receptionistPattern = new RegExp(
-      '(?<=<td class="valorGrande" style="text-align: center;">).+?(?=<)',
-      "g",
-    );
-    const receptionistInfo = Array.from(html.matchAll(receptionistPattern));
-    const products = receptionistInfo.shift();
-    const combos = receptionistInfo.shift();
-
-    const registers = [
-      {
-        NomeCategoria: "produtos",
-        QuantidadeVendida: products[0],
-      },
-      {
-        NomeCategoria: "combos",
-        QuantidadeVendida: combos[0],
-      },
-    ];
+    const registers = await getCombosAndProductsFromReceptionist(store, id);
 
     if (!(receptionistName in report)) {
       report[receptionistName] = [];
@@ -384,6 +319,68 @@ async function getReceptionistInfo(store) {
       loja: store,
     });
   }
+  console.log("");
+}
+
+async function getCombosAndProductsFromReceptionist(store, id) {
+  const html = await request.receptionistResults(store, id);
+
+  const productExistencePattern = new RegExp(
+    "<h4>Sobre Produtos Vendidos</h4>",
+    "g",
+  );
+  const comboExistencePattern = new RegExp(
+    "<h4>Sobre Pacotes Vendidos</h4>",
+    "g",
+  );
+
+  const productExist = productExistencePattern.test(html);
+  const comboExist = comboExistencePattern.test(html);
+
+  const receptionistPattern = new RegExp(
+    '(?<=<td class="valorGrande" style="text-align: center;">).+?(?=<)',
+    "g",
+  );
+  const receptionistInfo = Array.from(html.matchAll(receptionistPattern));
+  const products = productExist ? receptionistInfo.shift() : 0;
+  const combos = comboExist ? receptionistInfo.shift() : 0;
+
+  const registers = [
+    {
+      NomeCategoria: "produtos",
+      QuantidadeVendida: products[0],
+    },
+    {
+      NomeCategoria: "combos",
+      QuantidadeVendida: combos[0],
+    },
+  ];
+
+  return registers;
+}
+
+async function getClientsAmount(store) {
+  console.log(`Buscando quantidade de clientes da loja ${store}`);
+  const [clientsAmount, storeForbiddenReasons] =
+    await request.clientsAmount(store);
+
+  storeForbiddenReasons.map((reason) => {
+    if (!forbiddenReasons.includes(reason)) forbiddenReasons.push(reason);
+  });
+
+  if (!(store in report)) {
+    report[store] = [];
+  }
+
+  report[store].push({
+    resultados: getReportResult([
+      {
+        NomeCategoria: "clientes",
+        Quantidade: clientsAmount,
+      },
+    ]),
+    loja: store,
+  });
 }
 
 function getReportResult(registers) {
@@ -394,6 +391,7 @@ function getReportResult(registers) {
     manicure: 0,
     produtos: 0,
     combos: 0,
+    clientes: 0,
   };
 
   registers.map((r) => {
@@ -410,6 +408,8 @@ function getReportResult(registers) {
       reportResult["produtos"] += r.QuantidadeVendida;
     } else if (categoria === "combos") {
       reportResult["combos"] += r.QuantidadeVendida;
+    } else if (categoria === "clientes") {
+      reportResult["clientes"] += r.Quantidade;
     } else {
       if (!(categoria in reportResult))
         reportResult[categoria] = r.QuantidadeVendida;
