@@ -1,6 +1,6 @@
 import headers from "./headers.js";
+import extracter from "./extracter.js";
 
-import https from "https";
 import { parse } from "csv-parse/sync";
 import fs from "fs";
 
@@ -102,7 +102,10 @@ async function employeesList(store, isReceptionist = false) {
   const parceirasBody = await parceirasResponse.json();
 
   const table = await parceirasBody.Html;
-  return table;
+
+  const [names, ids] = extracter.namesAndIds(table);
+
+  return [names, ids];
 }
 
 async function partnerResults(store, id) {
@@ -171,8 +174,10 @@ async function receptionistResults(store, id) {
 
   cookieShouldBeSet(receptioninstResponse);
 
-  const responseBody = await receptioninstResponse.text();
-  return responseBody;
+  const html = await receptioninstResponse.text();
+
+  const registers = extracter.productsAndCombosRegisters(html);
+  return registers;
 }
 
 async function clientsAmount(store) {
@@ -234,7 +239,14 @@ async function clientsAmount(store) {
     }
   }
 
-  return [appointmentAmount, forbiddenReasons];
+  const registers = [
+    {
+      NomeCategoria: "clientes",
+      Quantidade: appointmentAmount,
+    },
+  ];
+
+  return [registers, forbiddenReasons];
 }
 
 function cookieShouldBeSet(response) {
