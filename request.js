@@ -181,39 +181,41 @@ async function receptionistResults(store, id) {
 }
 
 async function clientsAmount(store) {
-  const body = {
-    TipoData: 2,
-    DataInicio: startDate,
-    DataFim: finalDate,
-    ExibirEstornos: false,
-    TipoFiltroTransacaoProduto: 0,
-    IdFiltroPorDesconto: 0,
-  };
+  // const body = {
+  //   TipoData: 2,
+  //   DataInicio: startDate,
+  //   DataFim: finalDate,
+  //   ExibirEstornos: false,
+  //   TipoFiltroTransacaoProduto: 0,
+  //   IdFiltroPorDesconto: 0,
+  // };
 
-  const headers = getHeadersForStore(store);
+  // const headers = getHeadersForStore(store);
 
-  const encodedBody = new URLSearchParams(body);
+  // const encodedBody = new URLSearchParams(body);
 
-  const clientsAmountResponse = await fetch(urlAtendimentos, {
-    method: "POST",
-    headers: {
-      ...headers,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: encodedBody,
-  });
+  // const clientsAmountResponse = await fetch(urlAtendimentos, {
+  //   method: "POST",
+  //   headers: {
+  //     ...headers,
+  //     "Content-Type": "application/x-www-form-urlencoded",
+  //   },
+  //   body: encodedBody,
+  // });
 
-  cookieShouldBeSet(clientsAmountResponse);
+  // cookieShouldBeSet(clientsAmountResponse);
 
-  const responseBody = await clientsAmountResponse.json();
+  // const responseBody = await clientsAmountResponse.json();
 
-  const fileUrl = responseBody.Dados.UrlDownload;
+  // const fileUrl = responseBody.Dados.UrlDownload;
 
-  const forbiddenReasons = [];
-  let appointmentAmount = 0;
+  // const forbiddenReasons = [];
+  // let appointmentAmount = 0;
 
-  const response = await fetch(fileUrl);
-  const rawData = await response.arrayBuffer();
+  // const response = await fetch(fileUrl);
+  // const rawData = await response.arrayBuffer();
+
+  const rawData = fs.readFileSync(`./atendimentos/${store}.csv`);
 
   const decoder = new TextDecoder("windows-1252");
   const csvFile = decoder.decode(rawData);
