@@ -209,11 +209,11 @@ async function clientsAmount(store) {
 
   // const fileUrl = responseBody.Dados.UrlDownload;
 
-  // const forbiddenReasons = [];
-  // let appointmentAmount = 0;
-
   // const response = await fetch(fileUrl);
   // const rawData = await response.arrayBuffer();
+
+  const forbiddenReasons = [];
+  let appointmentAmount = 0;
 
   const rawData = fs.readFileSync(`./atendimentos/${store}.csv`);
 
