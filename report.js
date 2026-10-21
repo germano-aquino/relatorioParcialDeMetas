@@ -159,6 +159,7 @@ function getReportResult(registers) {
     produtos: 0,
     combos: 0,
     clientes: 0,
+    massagem: 0,
   };
 
   registers.map((r) => {
@@ -173,6 +174,8 @@ function getReportResult(registers) {
       reportResult["manicure"] += r.ValorTotal;
     } else if (categoria === "produtos") {
       reportResult["produtos"] += r.QuantidadeVendida;
+    } else if (categoria === "massagem") {
+      reportResult["massagem"] += r.QuantidadeVendida;
     } else if (categoria === "combos") {
       reportResult["combos"] += r.QuantidadeVendida;
     } else if (categoria === "clientes") {
@@ -195,6 +198,7 @@ function calculateTotalReport(goalReport) {
     let numProdutos = 0;
     let numCombos = 0;
     let numClientes = 0;
+    let numMassagem = 0;
 
     row.map((entry) => {
       depilacaoTotal += entry.resultados.depilação;
@@ -204,6 +208,7 @@ function calculateTotalReport(goalReport) {
       numProdutos += entry.resultados.produtos;
       numCombos += entry.resultados.combos;
       numClientes += entry.resultados.clientes;
+      numMassagem += entry.resultados.massagem;
     });
 
     goalReport[partner].unshift({
@@ -216,6 +221,7 @@ function calculateTotalReport(goalReport) {
         produtos: numProdutos,
         combos: numCombos,
         clientes: numClientes,
+        massagem: numMassagem,
       },
     });
   }
